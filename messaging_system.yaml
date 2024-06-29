@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'DynamoDBFullAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'dynamodb:*'
+                Resource: '*'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+
+  # Lambda Function
+  MessagingSystemLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'messaging_system'
+      Handler: 'messaging_system.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: 'python3.12'
+      Code:
+        S3Bucket: 'cloud-computing-hw2'
+        S3Key: 'messaging_system.zip'
+      Environment:
+        Variables:
+          CHATS_TABLE: 'chats'
+          USERS_TABLE: 'users'
+      Timeout: 30
+
+  # DynamoDB Chats Table
+  ChatsTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'chats'
+      AttributeDefinitions:
+        - AttributeName: 'chat_id'
+          AttributeType: 'S'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  # DynamoDB Users Table
+  UsersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'users'
+      AttributeDefinitions:
+        - AttributeName: 'user_id'
+          AttributeType: 'S'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+Outputs:
+  LambdaFunctionName:
+    Description: 'Lambda Function Name'
+    Value: !Ref MessagingSystemLambda
+  ChatsTableName:
+    Description: 'DynamoDB Chats Table Name'
+    Value: !Ref ChatsTable
+  UsersTableName:
+    Description: 'DynamoDB Users Table Name'
+    Value: !Ref UsersTable
