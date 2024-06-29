@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Resources:
-  # Lambda Execution Role
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -22,12 +21,10 @@ Resources:
                 Resource: '*'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-
-  # Lambda Function
   MessagingSystemLambda:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: 'messaging_system'
+      FunctionName: 'messaging-system-lambda'
       Handler: 'messaging_system.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: 'python3.12'
@@ -39,8 +36,6 @@ Resources:
           CHATS_TABLE: 'chats'
           USERS_TABLE: 'users'
       Timeout: 30
-
-  # DynamoDB Chats Table
   ChatsTable:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -48,11 +43,12 @@ Resources:
       AttributeDefinitions:
         - AttributeName: 'chat_id'
           AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'chat_id'
+          KeyType: 'HASH'
       ProvisionedThroughput:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
-
-  # DynamoDB Users Table
   UsersTable:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -60,17 +56,47 @@ Resources:
       AttributeDefinitions:
         - AttributeName: 'user_id'
           AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'user_id'
+          KeyType: 'HASH'
       ProvisionedThroughput:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
-
+  ApiGatewayHttpApi:
+    Type: 'AWS::ApiGatewayV2::Api'
+    Properties:
+      Name: 'MessagingSystemHttpApi'
+      ProtocolType: 'HTTP'
+  ApiGatewayIntegration:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref ApiGatewayHttpApi
+      IntegrationType: 'AWS_PROXY'
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessagingSystemLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+  ApiGatewayRoute:
+    Type: 'AWS::ApiGatewayV2::Route'
+    Properties:
+      ApiId: !Ref ApiGatewayHttpApi
+      RouteKey: 'POST /messaging-system/{action+}'
+      Target: !Sub 'integrations/${ApiGatewayIntegration}'
+  ApiGatewayStage:
+    Type: 'AWS::ApiGatewayV2::Stage'
+    Properties:
+      ApiId: !Ref ApiGatewayHttpApi
+      StageName: 'prod'
+      AutoDeploy: true
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref MessagingSystemLambda
+      Principal: 'apigateway.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayHttpApi}/prod/POST/messaging-system/*'
 Outputs:
   LambdaFunctionName:
     Description: 'Lambda Function Name'
     Value: !Ref MessagingSystemLambda
-  ChatsTableName:
-    Description: 'DynamoDB Chats Table Name'
-    Value: !Ref ChatsTable
-  UsersTableName:
-    Description: 'DynamoDB Users Table Name'
-    Value: !Ref UsersTable
+  ApiEndpoint:
+    Description: 'Messaging System API endpoint URL'
+    Value: !Sub 'https://${ApiGatewayHttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod/messaging-system/{action+}'
